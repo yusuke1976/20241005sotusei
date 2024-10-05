@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>指紋認証</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        .container {
+            text-align: center;
+            background-color: white;
+            padding: 2em;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 1em;
+            cursor: pointer;
+            border-radius: 5px;
+            margin: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #registrationForm {
+            display: none;
+            margin-top: 20px;
+        }
+        input {
+            margin: 10px 0;
+            padding: 5px;
+            width: 200px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>指紋認証</h1>
+        <div id="fingerprintImage"></div>
+        <button id="registerButton">ユーザー登録</button>
+        <button id="authenticateButton">指紋認証</button>
+        <div id="registrationForm">
+            <input type="text" id="username" placeholder="ユーザー名">
+            <button id="submitRegistration">登録</button>
+        </div>
+    </div>
+
+    <script>
+    // Base64 to ArrayBuffer
+    function base64ToArrayBuffer(base64) {
+        var binary_string = window.atob(base64);
+        var len = binary_string.length;
+        var bytes = new Uint8Array(len);
+        for (var i = 0; i < len; i++) {
+            bytes[i] = binary_string.charCodeAt(i);
+        }
+        return bytes.buffer;
+    }
+
+    // ArrayBuffer to Base64
+    function arrayBufferToBase64(buffer) {
+        var binary = '';
+        var bytes = new Uint8Array(buffer);
+        var len = bytes.byteLength;
+        for (var i = 0; i < len; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(binary);
+    }
+
+    document.getElementById('registerButton').addEventListener('click', () => {
+        document.getElementById('registrationForm').style.display = 'block';
+    });
+
+    document.getElementById('submitRegistration').addEventListener('click', async () => {
+        const username = document.getElementById('username').value;
+        if (!username) {
+            alert('ユーザー名を入力してください。');
+            return;
+        }
+
+        try {
+            console.log("Fetching challenge from server...");
+            const challengeResponse = await fetch('get_challenge.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ username: username }),
+                credentials: 'include'
+            });
+            const challengeData = await challengeResponse.json();
+            console.log("Received challenge data:", challengeData);
+
+            if (!challengeData.success) {
+                throw new Error('チャレンジの取得に失敗しました：' + challengeData.message);
+            }
+
+            const publicKeyCredentialCreationOptions = {
+                challenge: base64ToArrayBuffer(challengeData.challenge),
+                rp: {
+                    name: "Your App Name",
+                    id: window.location.hostname
+                },
+                user: {
+                    id: Uint8Array.from(username, c => c.charCodeAt(0)),
+                    name: username,
+                    displayName: username
+                },
+                pubKeyCredParams: [{alg: -7, type: "public-key"}],
+                authenticatorSelection: {
+                    authenticatorAttachment: "platform",
+                    userVerification: "required"
+                },
+                timeout: 60000,
+                attestation: "direct"
+            };
+
+            console.log("Creating credentials with options:", publicKeyCredentialCreationOptions);
+            const credential = await navigator.credentials.create({
+                publicKey: publicKeyCredentialCreationOptions
+            });
+            console.log("Credentials created:", credential);
+
+            const credentialData = {
+                username: username,
+                id: credential.id,
+                rawId: arrayBufferToBase64(credential.rawId),
+                response: {
+                    clientDataJSON: arrayBufferToBase64(credential.response.clientDataJSON),
+                    attestationObject: arrayBufferToBase64(credential.response.attestationObject),
+                },
+                type: credential.type
+            };
+            console.log("Sending credential data to server:", credentialData);
+
+            const response = await fetch('register.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(credentialData),
+                credentials: 'include'
+            });
+
+            const data = await response.json();
+            console.log("Server response:", data);
+
+            if (data.success) {
+                alert('ユーザー登録が完了しました。');
+                document.getElementById('registrationForm').style.display = 'none';
+            } else {
+                throw new Error('ユーザー登録に失敗しました：' + data.message);
+            }
+        } catch (err) {
+            console.error("Error during registration:", err);
+            alert(err.message || '指紋登録に失敗しました。お使いのデバイスが指紋認証に対応していない可能性があります。');
+        }
+    });
+
+    document.getElementById('authenticateButton').addEventListener('click', async () => {
+        try {
+            console.log("Fetching challenge for authentication...");
+            const challengeResponse = await fetch('get_challenge.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ authenticate: true }),
+                credentials: 'include'
+            });
+            const challengeData = await challengeResponse.json();
+            console.log("Received challenge data for authentication:", challengeData);
+
+            if (!challengeData.success) {
+                throw new Error('認証用チャレンジの取得に失敗しました：' + challengeData.message);
+            }
+
+            const publicKeyCredentialRequestOptions = {
+                challenge: base64ToArrayBuffer(challengeData.challenge),
+                timeout: 60000,
+                userVerification: "required"
+            };
+
+            console.log("Getting credentials...");
+            const assertion = await navigator.credentials.get({
+                publicKey: publicKeyCredentialRequestOptions
+            });
+            console.log("Credentials retrieved:", assertion);
+
+            console.log("Sending assertion to server...");
+            const response = await fetch('authenticate.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    id: assertion.id,
+                    rawId: arrayBufferToBase64(assertion.rawId),
+                    response: {
+                        clientDataJSON: arrayBufferToBase64(assertion.response.clientDataJSON),
+                        authenticatorData: arrayBufferToBase64(assertion.response.authenticatorData),
+                        signature: arrayBufferToBase64(assertion.response.signature),
+                        userHandle: assertion.response.userHandle ? arrayBufferToBase64(assertion.response.userHandle) : null,
+                    },
+                    type: assertion.type
+                }),
+                credentials: 'include'
+            });
+
+            const data = await response.json();
+            console.log("Server response for authentication:", data);
+
+            if (data.success) {
+                alert('認証に成功しました。');
+                window.location.href = 'select.php';
+            } else {
+                throw new Error('認証に失敗しました：' + data.message);
+            }
+        } catch (err) {
+            console.error("Error during authentication:", err);
+            alert(err.message || '指紋認証に失敗しました。お使いのデバイスが指紋認証に対応していない可能性があります。');
+        }
+    });
+    </script>
+</body>
+</html>

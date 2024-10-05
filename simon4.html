@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>指紋認証</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <style>
+        body {
+            font-family: 'Hiragino Sans', 'Meiryo', sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        #fingerprintImage {
+            width: 100px;
+            height: 100px;
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 11c0 5 2 8 4 8"/><path d="M12 11c0 5 2 8 4 8"/><path d="M4 17c1.333-2.667 2.667-5.333 4-8"/><path d="M20 17c-1.333-2.667-2.667-5.333-4-8"/><path d="M12 3v5"/><path d="M12 19v2"/></svg>');
+            background-size: contain;
+            background-repeat: no-repeat;
+            margin: 20px auto;
+        }
+        input, button {
+            display: block;
+            width: 100%;
+            margin: 10px 0;
+            padding: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>指紋認証</h1>
+
+    <div id="fingerprintImage"></div>
+
+    <h2>ユーザー登録</h2>
+    <input type="text" id="username" placeholder="ユーザー名">
+    <button id="register">登録</button>
+
+    <h2>認証</h2>
+    <button id="authenticate">認証</button>
+
+    <div id="message"></div>
+
+    <script>
+        function arrayBufferToBase64(buffer) {
+            return btoa(String.fromCharCode.apply(null, new Uint8Array(buffer)));
+        }
+
+        function base64ToArrayBuffer(base64) {
+            const binaryString = atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        async function getChallenge() {
+            const response = await fetch('get_challenge.php');
+            const data = await response.json();
+            console.log('Received challenge:', data.challenge);
+            return base64ToArrayBuffer(data.challenge);
+        }
+
+        async function register() {
+            const username = document.getElementById('username').value;
+            if (!username) {
+                alert('ユーザー名を入力してください。');
+                return;
+            }
+
+            try {
+                console.log('登録開始');
+                const challenge = await getChallenge();
+                console.log('チャレンジ取得成功:', arrayBufferToBase64(challenge));
+
+                const publicKeyCredentialCreationOptions = {
+                    challenge: challenge,
+                    rp: {
+                        name: "サンプル企業",
+                        id: window.location.hostname
+                    },
+                    user: {
+                        id: new Uint8Array(16),
+                        name: username,
+                        displayName: username
+                    },
+                    pubKeyCredParams: [{alg: -7, type: "public-key"}],
+                    authenticatorSelection: {
+                        authenticatorAttachment: "platform",
+                        requireResidentKey: false,
+                        userVerification: "required"
+                    },
+                    timeout: 60000,
+                    attestation: "direct"
+                };
+                console.log('登録オプション:', publicKeyCredentialCreationOptions);
+
+                console.log('navigator.credentials.create 呼び出し前');
+                const credential = await navigator.credentials.create({
+                    publicKey: publicKeyCredentialCreationOptions
+                });
+                console.log('navigator.credentials.create 成功:', credential);
+
+                const fingerprint = navigator.userAgent + JSON.stringify(navigator.hardwareConcurrency + navigator.deviceMemory);
+
+                const response = await fetch('register.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username: username,
+                        id: credential.id,
+                        rawId: arrayBufferToBase64(credential.rawId),
+                        response: {
+                            clientDataJSON: arrayBufferToBase64(credential.response.clientDataJSON),
+                            attestationObject: arrayBufferToBase64(credential.response.attestationObject),
+                        },
+                        type: credential.type,
+                        fingerprint: fingerprint
+                    }),
+                });
+
+                const result = await response.json();
+                console.log('登録結果:', result);
+                if (result.success) {
+                    document.getElementById('message').textContent = 'ユーザー登録が成功しました。認証をお試しください。';
+                } else {
+                    document.getElementById('message').textContent = '登録失敗: ' + result.message;
+                }
+            } catch (error) {
+                console.error('詳細なエラー情報:', error);
+                let errorMessage = 'エラーが発生しました: ';
+                if (error.name === 'NotAllowedError') {
+                    errorMessage += 'ユーザーが操作を拒否したか、デバイスが利用できません。';
+                } else if (error.name === 'SecurityError') {
+                    errorMessage += 'セキュリティエラーが発生しました。HTTPSで接続されていることを確認してください。';
+                } else if (error.name === 'NotSupportedError') {
+                    errorMessage += 'このブラウザまたはデバイスは指紋認証をサポートしていません。';
+                } else {
+                    errorMessage += error.message + ' (' + error.name + ')';
+                }
+                document.getElementById('message').textContent = errorMessage;
+            }
+        }
+
+        async function authenticate() {
+            try {
+                console.log('認証開始');
+                const challenge = await getChallenge();
+                console.log('チャレンジ取得成功:', arrayBufferToBase64(challenge));
+
+                const publicKeyCredentialRequestOptions = {
+                    challenge: challenge,
+                    timeout: 60000,
+                    userVerification: "required"
+                };
+                console.log('認証オプション:', publicKeyCredentialRequestOptions);
+
+                console.log('navigator.credentials.get 呼び出し前');
+                
+                try {
+                    console.log('credentials.get 開始');
+                    const credential = await navigator.credentials.get({
+                        publicKey: publicKeyCredentialRequestOptions
+                    });
+                    console.log('navigator.credentials.get 成功:', credential);
+                    
+                    const response = await fetch('authenticate.php', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            id: credential.id,
+                            rawId: arrayBufferToBase64(credential.rawId),
+                            response: {
+                                clientDataJSON: arrayBufferToBase64(credential.response.clientDataJSON),
+                                authenticatorData: arrayBufferToBase64(credential.response.authenticatorData),
+                                signature: arrayBufferToBase64(credential.response.signature),
+                                userHandle: credential.response.userHandle ? arrayBufferToBase64(credential.response.userHandle) : null,
+                            },
+                            type: credential.type
+                        }),
+                    });
+
+                    const result = await response.json();
+                    console.log('認証結果:', result);
+                    document.getElementById('message').textContent = result.success ? '認証成功' : '認証失敗: ' + result.message;
+
+                } catch (credentialError) {
+                    console.error('credentials.get でエラー:', credentialError);
+                    console.log('エラーの名前:', credentialError.name);
+                    console.log('エラーメッセージ:', credentialError.message);
+                    console.log('エラーのスタックトレース:', credentialError.stack);
+                    if (credentialError.name === 'NotAllowedError') {
+                        console.log('ユーザーが操作を拒否したか、デバイスが利用できません。詳細:', credentialError.message);
+                    }
+                    throw credentialError;  // エラーを再スローして、外側のcatchブロックで処理
+                }
+
+            } catch (error) {
+                console.error('詳細なエラー情報:', error);
+                let errorMessage = 'エラーが発生しました: ';
+                if (error.name === 'NotAllowedError') {
+                    errorMessage += 'ユーザーが操作を拒否したか、デバイスが利用できません。';
+                } else if (error.name === 'SecurityError') {
+                    errorMessage += 'セキュリティエラーが発生しました。HTTPSで接続されていることを確認してください。';
+                } else if (error.name === 'AbortError') {
+                    errorMessage += '操作がタイムアウトしました。再度お試しください。';
+                } else if (error.name === 'NotSupportedError') {
+                    errorMessage += 'このブラウザまたはデバイスは指紋認証をサポートしていません。';
+                } else {
+                    errorMessage += error.message + ' (' + error.name + ')';
+                }
+                document.getElementById('message').textContent = errorMessage;
+            }
+        }
+
+        async function checkWebAuthnSupport() {
+            let message = "";
+            if (window.PublicKeyCredential) {
+                message += "このブラウザはWebAuthnをサポートしています。\n";
+                
+                try {
+                    const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+                    if (available) {
+                        message += "このデバイスは指紋認証（またはその他のプラットフォーム認証）をサポートしています。";
+                    } else {
+                        message += "このデバイスは指紋認証（またはその他のプラットフォーム認証）をサポートしていません。";
+                    }
+                } catch (e) {
+                    message += "デバイスのサポート状況を確認中にエラーが発生しました: " + e;
+                }
+            } else {
+                message = "このブラウザはWebAuthnをサポートしていません。";
+            }
+            
+            console.log(message);
+            document.getElementById('message').textContent = message;
+        }
+
+        document.getElementById('register').addEventListener('click', register);
+        document.getElementById('authenticate').addEventListener('click', authenticate);
+
+        // ページ読み込み時に診断を実行
+        window.addEventListener('load', checkWebAuthnSupport);
+    </script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+        const authButton = document.querySelector('button:contains("認証")');
+        const messageElement = document.getElementById('message');
+
+        function updateMessage(message, isError = false) {
+            messageElement.textContent = message;
+            messageElement.style.color = isError ? 'red' : 'black';
+            console.log(message);
+        }
+
+        // 認証プロセス
+        authButton.addEventListener('click', async () => {
+            try {
+            updateMessage('認証プロセスを開始しています...');
+
+            // 登録済みのパスキー情報を取得
+            const credentialsResponse = await fetch('/get_credentials.php');
+            const credentialsData = await credentialsResponse.json();
+            console.log('Credentials data:', credentialsData);
+            
+            if (!credentialsData.success) {
+                throw new Error(credentialsData.message || 'クレデンシャル情報の取得に失敗しました。');
+            }
+
+            if (!credentialsData.credentials || credentialsData.credentials.length === 0) {
+                throw new Error('利用可能なパスキーが見つかりません。先にユーザー登録を行ってください。');
+            }
+
+            updateMessage('指紋センサーに触れてください。');
+
+            const challengeResponse = await fetch('/get_challenge.php');
+            const { challenge } = await challengeResponse.json();
+
+            const publicKeyCredentialRequestOptions = {
+                challenge: Uint8Array.from(atob(challenge), c => c.charCodeAt(0)),
+                rpId: window.location.hostname,
+                allowCredentials: credentialsData.credentials.map(cred => ({
+                id: Uint8Array.from(atob(cred.id), c => c.charCodeAt(0)),
+                type: 'public-key'
+                })),
+                userVerification: "required",
+                timeout: 60000,
+            };
+
+            console.log('Authentication options:', publicKeyCredentialRequestOptions);
+
+            const credential = await navigator.credentials.get({
+                publicKey: publicKeyCredentialRequestOptions
+            });
+
+            if (credential) {
+                updateMessage('指紋認証が成功しました。サーバーで検証中...');
+                // サーバーでの検証プロセスをここに実装
+                // ...
+
+                updateMessage('認証が完了しました。');
+            }
+            } catch (error) {
+            console.error('Authentication error:', error);
+            
+            let errorMessage = '認証に失敗しました: ' + error.message;
+            if (error.name === 'NotAllowedError') {
+                errorMessage += ' ユーザーが操作を拒否したか、デバイスが利用できません。';
+            } else if (error.name === 'SecurityError') {
+                errorMessage += ' セキュリティエラーが発生しました。HTTPSを使用しているか確認してください。';
+            } else if (error.name === 'NotSupportedError') {
+                errorMessage += ' このブラウザまたはデバイスは指紋認証をサポートしていません。';
+            }
+            
+            updateMessage(errorMessage, true);
+            }
+        });
+
+        // 環境チェック
+        if (window.PublicKeyCredential) {
+            PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
+            .then((available) => {
+                if (!available) {
+                updateMessage('このデバイスは指紋認証をサポートしていません。', true);
+                } else {
+                updateMessage('このデバイスは指紋認証をサポートしています。');
+                }
+            })
+            .catch((error) => {
+                console.error('Error checking authenticator availability:', error);
+                updateMessage('指紋認証の利用可能性を確認できませんでした。', true);
+            });
+        } else {
+            updateMessage('このブラウザは指紋認証をサポートしていません。', true);
+        }
+        });
+    </script>
+</body>
+</html>
