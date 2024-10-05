@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BOW - AI選書サービス</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <h1>BOW (Bookshelf Of Worries)</h1>
+        <p>あなたの悩み、本が導く答え</p>
+    </header>
+
+    <main>
+        <section class="input-section">
+            <h2>あなたの悩みを教えてください</h2>
+            <textarea id="worryInput" placeholder="ここに悩みを入力してください"></textarea>
+
+            <h3>本のジャンルを選んでください</h3>
+            <div class="genre-selection">
+                <label><input type="checkbox" value="fiction"> 小説</label>
+                <label><input type="checkbox" value="non-fiction"> ノンフィクション</label>
+                <label><input type="checkbox" value="self-help"> 自己啓発</label>
+                <label><input type="checkbox" value="poetry"> 詩</label>
+                <label><input type="checkbox" value="manga"> 漫画</label>
+                <label><input type="checkbox" value="other"> その他</label>
+            </div>
+
+            <button onclick="getBookRecommendations()">本を探す</button>
+        </section>
+
+        <section id="resultsSection" class="hidden">
+            <h2>あなたの悩みにおすすめの本</h2>
+            <div id="bookResults"></div>
+        </section>
+    </main>
+
+    <footer>
+        <p>© 2024 BOW (Bookshelf Of Worries). All rights reserved.</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
