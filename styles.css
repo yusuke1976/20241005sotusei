@@ -1,0 +1,93 @@
+body {
+    font-family: Arial, sans-serif;
+    background-image: url('./img/haikei9.webp');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+    background-color: #f4f4f9;
+    margin: 0;
+    padding: 0;
+    text-align: center;
+    min-height: 100vh;
+}
+
+header {
+    background-color: #34495e;
+    color: white;
+    padding: 20px 0;
+}
+
+header h1 {
+    margin: 0;
+    font-size: 2.5em;
+}
+
+header p {
+    margin: 10px 0;
+}
+
+main {
+    padding: 20px;
+}
+
+.input-section textarea {
+    width: 80%;
+    height: 100px;
+    margin-bottom: 20px;
+}
+
+.genre-selection {
+    margin-bottom: 20px;
+}
+
+.genre-selection label {
+    margin-right: 10px;
+}
+
+button {
+    padding: 10px 20px;
+    background-color: #3498db;
+    color: white;
+    border: none;
+    cursor: pointer;
+    font-size: 1.2em;
+}
+
+button:hover {
+    background-color: #2980b9;
+}
+
+#resultsSection {
+    margin-top: 40px;
+}
+
+.book-card {
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    margin: 20px auto;
+    padding: 20px;
+    max-width: 400px;
+}
+
+.book-card h3 {
+    margin: 0;
+}
+
+.hidden {
+    display: none;
+}
+
+.excitement-selection {
+    margin-bottom: 20px;
+}
+
+.excitement-selection label {
+    margin-right: 10px;
+    display: inline-block;
+}
+
+.excitement-selection input[type="radio"] {
+    margin-right: 5px;
+}
